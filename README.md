@@ -17,4 +17,4 @@ cd dotfiles
 - AwesomeWM
 - Rofi
 
-![Screenshot of the setup](https://github.com/Nightfire390/dotfiles/screenshots/tiling.png "Screenshot of the setup")
+![Screenshot of the setup](https://github.com/Nightfire390/dotfiles/blob/master/screenshots/tiling.png "Screenshot of the setup")
