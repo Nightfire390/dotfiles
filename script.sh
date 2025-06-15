@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Installing packages..."
-sudo pacman -S zsh awesome neovim rofi ripgrep lua-language-server pavucontrol brightnessctl acpi
+sudo pacman -S zsh xss-lock xsecurelock awesome neovim rofi ripgrep lua-language-server pavucontrol brightnessctl acpi
 
 echo "Done."
 

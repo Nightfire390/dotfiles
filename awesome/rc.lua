@@ -59,12 +59,12 @@ local media_player = awful.widget.watch(
 )
 
 
+awful.spawn("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
 awful.spawn("xset s off; xset -dpms; xset s noblank");
 awful.spawn("xss-lock xsecurelock")
-awful.spawn("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
-awful.spawn("picom")
+awful.spawn("blueman-applet")
 awful.spawn("nm-applet")
---awful.spawn("blueman-applet")
+awful.spawn("picom")
 awful.spawn("xinput set-prop 'ELAN1203:00 04F3:307A Touchpad' 'libinput Tapping Enabled' 1")
 awful.spawn("xinput set-prop 'ELAN1203:00 04F3:307A Touchpad' 'libinput Natural Scrolling Enabled' 1")
 
@@ -87,11 +87,11 @@ modkey = "Mod4"
 -- Table of layouts to cover with awful.layout.inc, order matters.
 awful.layout.layouts = {
     awful.layout.suit.floating,
+    awful.layout.suit.tile,
     awful.layout.suit.max,
-    awful.layout.suit.spiral,
-    --awful.layout.suit.spiral.dwindle,
+    -- awful.layout.suit.spiral,
+    -- awful.layout.suit.spiral.dwindle,
     -- awful.layout.suit.max.fullscreen,
-    -- awful.layout.suit.tile,
     -- awful.layout.suit.tile.left,
     -- awful.layout.suit.tile.bottom,
     -- awful.layout.suit.tile.top,
@@ -116,7 +116,6 @@ mytools = {
 
 myapplication = {
     { "Zen Browser", "flatpak run app.zen_browser.zen" },
-    { "Firefox", "firefox-developer-edition" },
     { "Chromium", "chromium" },
     { "Tor Browser", "torbrowser-launcher" },
     { "LibreOffice", "libreoffice" },
@@ -144,13 +143,8 @@ mymedia = {
     { "Stremio", "stremio" },
 }
 mysettings = {
-    { "Power", "" },
     { "Display", "arandr" },
     { "Sound", "pavucontrol" },
-    { "Keyboard", "" },
-    { "Trackpad", "" },
-    { "Mouse", "" },
-    { "Users", "" },
 }
 
 mypowermenu = {
@@ -279,6 +273,13 @@ awful.screen.connect_for_each_screen(function(s)
     -- Create the wibox
     s.my_upper_wibox = awful.wibar({ position = "top", screen = s})
 
+    local systray = {
+        wibox.widget.systray(),
+        top = 4,
+        bottom = 4,
+        widget = wibox.container.margin
+    }
+
     -- Add widgets to the wibox
     s.my_upper_wibox:setup {
         layout = wibox.layout.align.horizontal,
@@ -292,15 +293,21 @@ awful.screen.connect_for_each_screen(function(s)
         { -- Right widgets
             spacing = 10,
             layout = wibox.layout.fixed.horizontal,
-            mykeyboardlayout,
-            wibox.widget.systray(),
+            --mykeyboardlayout,
+            systray,--wibox.widget.systray(),
+            volume_widget{
+                widget_type = 'horizontal_bar',
+                width = 60,
+                margins = 14,
+                mute_color = "#ff444455",
+                main_color = "#ff4444",
+                lefresh_rate = 2
+            },
+           -- vol_widget,
             brightness_widget{
                 step = 5,
                 program = "brightnessctl",
                 type = "arc"
-            },
-            volume_widget{
-                widget_type = 'arc'
             },
             batteryarc_widget({
                 arc_thickness = 3,
@@ -344,23 +351,142 @@ naughty.config.defaults.icon_size = 100
 naughty.config.defaults.position = "bottom_right"
 naughty.config.defaults.margin = 15
 
+-- Common progressbar popup (Volume, Mic, Brightness)
+local progressbar_popup = awful.popup {
+    widget = {
+        {
+            {
+                max_value = 150,
+                align = "center",
+                valign = "center",
+                width = 150,
+                height = 3,
+                background_color = "#ffffff11",
+
+                widget = wibox.widget.progressbar,
+            },
+            margins = 20,
+            widget = wibox.container.margin,
+        },
+        bg = beautiful.bg_normal or "#222222",
+        fg = beautiful.fg_normal or "#ffffff",
+        shape = gears.shape.rounded_rect,
+        border_width = 2,
+        border_color = beautiful.border_focus or "#4c7899",
+        widget = wibox.container.background,
+    },
+    placement = function(c)
+        awful.placement.centered(c)
+        awful.placement.bottom(c, {margins = {bottom = 80}})
+    end,
+    visible = false,
+    ontop = true,
+    width = 200,
+    height = 80,
+}
+
+-- Timer to hide popup after 1 second
+local hide_timer = gears.timer {
+    timeout = 1.5,
+    single_shot = true,
+    callback = function()
+        progressbar_popup.visible = false
+    end
+}
+
+-- Volume
+local function set_volume(val)
+    awful.spawn.easy_async_with_shell(
+        "pactl get-sink-volume @DEFAULT_SINK@ && pactl get-sink-mute @DEFAULT_SINK@",
+        function(stdout)
+            local volume = tonumber(stdout:match("(%d+)%%"))
+            local mute_status = stdout:match("Mute: (%w+)") == "yes"
+
+            if volume then
+                progressbar_popup.widget.widget.widget.max_value = 150
+
+                if volume + val <= 150 then
+                    volume_widget:inc(val)
+                end
+                progressbar_popup.widget.widget.widget.value = volume + val
+                progressbar_popup.widget.widget.widget.color = "#ff4450"
+
+                if mute_status then
+                    progressbar_popup.widget.widget.widget.color = "#ff445055"
+                end
+                -- Show popup
+                progressbar_popup.visible = true
+
+                -- Restart timer
+                hide_timer:again()
+            end
+        end
+    )
+end
+
+-- Mic
+local function toggle_mic_mute()
+    awful.spawn("pactl set-source-mute @DEFAULT_SOURCE@ toggle")
+    awful.spawn.easy_async_with_shell(
+        "pactl get-source-volume @DEFAULT_SOURCE@ && pactl get-source-mute @DEFAULT_SOURCE@",
+        function(stdout)
+            local volume = tonumber(stdout:match("(%d+)%%"))
+            local mute_status = stdout:match("Mute: (%w+)") == "yes"
+
+            if volume then
+                progressbar_popup.widget.widget.widget.max_value = 100
+                progressbar_popup.widget.widget.widget.value = volume
+                progressbar_popup.widget.widget.widget.color = "#5555ff"
+
+                if mute_status then
+                    progressbar_popup.widget.widget.widget.color = "#5555ff55"
+                end
+                -- Show popup
+                progressbar_popup.visible = true
+
+                -- Restart timer
+                hide_timer:again()
+            end
+        end
+    )
+end
+
+-- Brightness
+local function show_brightness()
+    awful.spawn.easy_async_with_shell(
+        "brightnessctl",
+        function(stdout)
+            local volume = tonumber(stdout:match("(%d+)%%"))
+
+            if volume then
+                progressbar_popup.widget.widget.widget.max_value = 100
+                progressbar_popup.widget.widget.widget.value = volume
+                progressbar_popup.widget.widget.widget.color = "#cccccc"
+
+                -- Show popup
+                progressbar_popup.visible = true
+
+                -- Restart timer
+                hide_timer:again()
+            end
+        end
+    )
+end
+
 
 -- {{{ Key bindings
 globalkeys = gears.table.join(
     
-    awful.key({}, "XF86AudioRaiseVolume", function () 
-        volume_widget:inc(5)
-        
-    end),
-    awful.key({}, "XF86AudioLowerVolume", function () volume_widget:dec(5) end),
-    awful.key({}, "XF86AudioMute", function () volume_widget:toggle() end),
+    awful.key({}, "XF86AudioRaiseVolume", function () set_volume(5) end),
+    awful.key({}, "XF86AudioLowerVolume", function () set_volume(-5) end),
+    awful.key({}, "XF86AudioMute", function () volume_widget:toggle(); set_volume(0) end),
+    awful.key({}, "XF86AudioMicMute", function() toggle_mic_mute() end),
     awful.key({}, "Print", function () awful.util.spawn("flameshot gui") end),
     awful.key({ modkey }, "Print", function () awful.util.spawn("flameshot full") end),
 
-   --awful.key({ modkey }, "i"--[["XF86Display"]], function() xrandr.xrandr() end),
 
-    awful.key({}, "XF86MonBrightnessUp", function () brightness_widget:inc() end, {description = "increase brightness", group = "custom"}),
-    awful.key({}, "XF86MonBrightnessDown", function () brightness_widget:dec() end, {description = "decrease brightness", group = "custom"}),
+    awful.key({}, "XF86MonBrightnessUp", function () brightness_widget:inc(); show_brightness() end, {description = "increase brightness", group = "custom"}),
+    awful.key({}, "XF86MonBrightnessDown", function () brightness_widget:dec(); show_brightness() end, {description = "decrease brightness", group = "custom"}),
 
     awful.key({}, "XF86Calculator", function () awful.util.spawn("alacritty -e octave") end),
 
@@ -372,7 +498,7 @@ globalkeys = gears.table.join(
               {description = "view next", group = "tag"}),
     awful.key({ modkey,           }, "Escape", awful.tag.history.restore,
               {description = "go back", group = "tag"}),
-
+            
     awful.key({ modkey,           }, "j",
         function ()
             awful.client.focus.byidx( 1)
@@ -421,17 +547,23 @@ globalkeys = gears.table.join(
     awful.key({ modkey, "Shift"   }, "q", awesome.quit,
               {description = "quit awesome", group = "awesome"}),
 
-    awful.key({ modkey,           }, "l",     function () awful.spawn("xsecurelock")          end,
+    awful.key({ }, "XF86ScreenSaver",     function () awful.spawn("xsecurelock")          end,
               {description = "Lock screen"}),
-  --  awful.key({ modkey,           }, "h",     function () awful.tag.incmwfact(-0.05)          end,
-  --            {description = "decrease master width factor", group = "layout"}),
+    awful.key({ modkey,           }, "h",     function () awful.tag.incmwfact(-0.05)          end,
+              {description = "decrease master width factor", group = "layout"}),
+    awful.key({ modkey,           }, "l",     function () awful.tag.incmwfact(0.05)          end,
+              {description = "decrease master width factor", group = "layout"}),
+    awful.key({ modkey,  "Control"    }, "-",     function () awful.tag.incgap(1.5)          end,
+              {description = "decrease master width factor", group = "layout"}),
+    awful.key({ modkey,  "Control"    }, "=",     function () awful.tag.incgap(-1.5)          end,
+              {description = "decrease master width factor", group = "layout"}),
     awful.key({ modkey, "Shift"   }, "h",     function () awful.tag.incnmaster( 1, nil, true) end,
               {description = "increase the number of master clients", group = "layout"}),
     awful.key({ modkey, "Shift"   }, "l",     function () awful.tag.incnmaster(-1, nil, true) end,
               {description = "decrease the number of master clients", group = "layout"}),
-    awful.key({ modkey, "Control" }, "h",     function () awful.tag.incncol( 1, nil, true)    end,
+    awful.key({ modkey, "Control" }, "h",     function () awful.tag.incncol(-1, nil, true)    end,
               {description = "increase the number of columns", group = "layout"}),
-    awful.key({ modkey, "Control" }, "l",     function () awful.tag.incncol(-1, nil, true)    end,
+    awful.key({ modkey, "Control" }, "l",     function () awful.tag.incncol( 1, nil, true)    end,
               {description = "decrease the number of columns", group = "layout"}),
     awful.key({ modkey,           }, "space", function () awful.layout.inc( 1)                end,
               {description = "select next", group = "layout"}),
@@ -607,7 +739,7 @@ awful.rules.rules = {
         class = {
           "Arandr",
           "Blueman-manager",
-          "discord",
+          "vesktop",
           "pavucontrol",
           "Gpick",
           "GParted",
@@ -637,7 +769,16 @@ awful.rules.rules = {
 
     -- Add titlebars to normal clients and dialogs
     { rule_any = { type = { "normal", "dialog" }
-      }, properties = { titlebars_enabled = true }
+      }, properties = { 
+
+            titlebars_enabled = true,
+        
+            placement = function(c)
+                awful.placement.top_left(c, { margins = { top = 70, left = 70 } })
+                awful.placement.no_overlap(c)
+                awful.placement.no_offscreen(c)
+            end,
+  }
     }, 
     {
         rule = { class = "Alacritty" },
