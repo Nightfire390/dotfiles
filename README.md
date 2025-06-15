@@ -9,8 +9,7 @@ cd dotfiles
 ./script.sh
 ```
 
-##### Contains?
-
+##### Contains:
 - Zsh
 - NeoVim
 - Alacritty
