@@ -8,6 +8,7 @@ echo "Done."
 echo "Copying general configs..."
 cp .zshrc $HOME/
 cp .tmux.conf $HOME/
+cp picom.conf $HOME/.config/
 cp -r alacritty $HOME/.config/
 cp -r rofi $HOME/.local/share/
 
